@@ -1,4 +1,4 @@
-# 2026/4/4 slade & conv1d end2end
+TECOS: Temporally Contextualized Supervision for Dynamic Graph Anomaly Detection
 
 ## Requirements
 
