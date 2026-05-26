@@ -1,132 +1,214 @@
-TECOS: Temporally Contextualized Supervision for Dynamic Graph Anomaly Detection
+# TECOS: Temporally Contextualized Supervision for Dynamic Graph Anomaly Detection
 
-## Requirements
+TECOS (Temporally Contextualized Supervision) is a dynamic graph anomaly detection method built upon a SLADE/TGN-style temporal graph encoder. It enhances anomaly detection by incorporating temporal context into supervision, using recovery and drift signals to guide end-to-end learning over dynamic graph interactions.
 
-- Dependency
+## Repository Structure
 
-```{bash}
-python==3.9
-pandas==1.5.2
-numpy==1.23.5
-torch==1.13.1
-torch-scatter=2.1.0
-scikit_learn==1.1.3
-tqdm==4.65.0
+```text
+.
+|-- main.py                    # Main entry point for TECOS experiments
+|-- requirements.txt           # Python dependencies
+|-- evaluation/
+|   `-- evaluation.py          # Evaluation utilities
+|-- model/
+|   |-- SLADE_TGN.py           # SLADE/TGN-style temporal graph encoder
+|   |-- contextual_supervision.py # Temporally contextualized supervision module
+|   |-- temporal_attention_SLADE.py # Temporal attention layer used by the encoder
+|   `-- time_encoding.py
+|-- modules/
+|   |-- embedding_module.py
+|   |-- memory.py
+|   |-- memory_updater.py
+|   |-- message_function.py
+|   `-- ssm.py
+`-- utils/
+    |-- data_processing.py     # Dataset loading and temporal split
+    |-- e2e_training.py        # Training/evaluation helper functions
+    |-- preprocess_data.py     # Raw data preprocessing
+    |-- MI.py                  # Mutual information losses
+    |-- cosine.py
+    |-- dot.py
+    |-- euclidean.py
+    `-- utils.py               # Neighbor finder and shared utilities
 ```
 
-### Dataset and Preprocessing
+`main.py` keeps the high-level TECOS experiment flow: argument parsing, data loading, model construction, training, evaluation, and logging. Reusable helper functions are separated into `utils/e2e_training.py`.
 
-#### Download the dataset
+## Environment
 
-We already preprocess bitcoinalpha, bitcionotc, Sytentic-Hijack, Sytentic-New datsets and save csv files in directory `data/`.
+Python 3.9 is recommended.
 
-You can download the Wikipedia and Reddit datasets from here (http://snap.stanford.edu/jodie/) and store their csv files in directory `data/`.
+Install dependencies:
 
-We need the data format like `source_id, destination_id, timestamp, labels, features (optional))`.
+```bash
+pip install -r requirements.txt
+```
 
-#### Preprocess the dataset (from [TGN](https://github.com/twitter-research/tgn))
+The project uses PyTorch, PyTorch Geometric, and torch-scatter. If `torch-scatter` or `torch-geometric` fails to install directly from `requirements.txt`, install versions that match your local PyTorch and CUDA environment.
 
-```{bash}
+## Data
+
+The main script expects preprocessed CSV files in the `data/` directory:
+
+```text
+data/ml_<dataset_name>.csv
+```
+
+Supported dataset names include:
+
+- `wikipedia`
+- `reddit`
+- `bitcoinalpha`
+- `bitcoinotc`
+
+Raw CSV files should follow this format:
+
+```text
+source_id,destination_id,timestamp,label,features(optional)
+```
+
+After preprocessing, the model reads files with these columns:
+
+```text
+u,i,ts,label,idx
+```
+
+## Preprocessing
+
+Place the raw dataset file under `data/`, for example:
+
+```text
+data/wikipedia.csv
+```
+
+Then run:
+
+```bash
 python utils/preprocess_data.py --data wikipedia --bipartite
 python utils/preprocess_data.py --data reddit --bipartite
 python utils/preprocess_data.py --data bitcoinalpha
 python utils/preprocess_data.py --data bitcoinotc
-
 ```
 
-After preprocessing, output file is `ml_dataset_name.csv` and contains data format like `source id, destination id, timestamp, label, edge idx`.
+The preprocessing script generates:
 
-During this process, `.npy` files containing node or edge feature information have been generated for other baseline models, which are not utilized in the SLADE model. (we need only `ml_dataset_name.csv` files)
-
-Data preprocessing has been conducted for all datasets (except reddit dataset) and saved in directory `data/`.
-
-### Run the model
-
-Dynamic Anomaly Detection for each dataset (SLADE)
-
-```{bash}
-python SLADE_main.py -d wikipedia
-python SLADE_main.py -d reddit
-python SLADE_main.py -d bitcoinalpha
-python SLADE_main.py -d bitcoinotc
+```text
+data/ml_<dataset_name>.csv
+data/ml_<dataset_name>.npy
+data/ml_<dataset_name>_node.npy
 ```
 
-Dynamic Anomaly Detection for each dataset (SLADE-HP)
+The current TECOS pipeline mainly uses `data/ml_<dataset_name>.csv`.
 
-```{bash}
-python SLADE_main.py -d wikipedia --bs 300 --srf 10 --drf 10
-python SLADE_main.py -d reddit --bs 100 --srf 0.1 --drf 1
-python SLADE_main.py -d bitcoinalpha --bs 300 --srf 1 --drf 10
-python SLADE_main.py -d bitcoinotc --bs 300 --srf 10 --drf 1
+## Running Experiments
+
+Run the default experiment:
+
+```bash
+python main.py -d wikipedia
 ```
 
-Training Ratio Test
+Run other datasets:
 
-```{bash}
-python SLADE_main.py -d wikipedia --training_ratio 0.7
-python SLADE_main.py -d reddit --training_ratio 0.7
+```bash
+python main.py -d reddit
+python main.py -d bitcoinalpha
+python main.py -d bitcoinotc
 ```
 
-Detection Time Test (on the Wikipedia dataset)
+Example with common options:
 
-```{bash}
-python SLADE_main.py --test_inference_time
+```bash
+python main.py -d wikipedia --n_epoch 10 --n_runs 3 --bs 100
 ```
 
-### Ablation Study
+View all command-line options:
 
-```{bash}
-# Memory Drift Loss + Drift Score
-python SLADE_main.py --only_drift_loss_score
-
-# Memory Reconstruction Loss + Reconstruction Score
-python SLADE_main.py --only_recovery_loss_score
-
-# Memory Drift Loss + Memory Reconstruction Loss + Drift Score
-python SLADE_main.py --only_drift_score
-
-# Memory Drift Loss + Memory Reconstruction Loss + Reconstruction Score
-python SLADE_main.py --only_rec_score
+```bash
+python main.py --help
 ```
 
-### Type Analysis
+## Important Arguments
 
-```{bash}
-# Sythetic-Hijack (type 1 & 3)
-python SLADE_main.py -d synthetic_hijack
+| Argument                     | Default         | Description                                       |
+| ---------------------------- | --------------- | ------------------------------------------------- |
+| `-d`, `--data`               | `wikipedia`     | Dataset name                                      |
+| `--bs`                       | `100`           | Batch size                                        |
+| `--n_degree`                 | `20`            | Number of temporal neighbors                      |
+| `--n_head`                   | `2`             | Number of attention heads                         |
+| `--n_epoch`                  | `10`            | Number of training epochs                         |
+| `--n_runs`                   | `3`             | Number of repeated runs                           |
+| `--seed`                     | `0`             | Base random seed                                  |
+| `--lr`                       | `3e-6`          | Main model learning rate                          |
+| `--stage2_lr`                | `5e-4`          | Contextual supervision module learning rate       |
+| `--training_ratio`           | `0.85`          | Temporal split ratio for training data            |
+| `--mi_method`                | `mine`          | Mutual information estimator: `mine` or `infonce` |
+| `--distance_metric`          | `cosine`        | Distance metric: `cosine` or `euclidean`          |
+| `--label_delay`              | `0`             | Label delay applied by source node                |
+| `--delay_apply_to`           | `both`          | Apply label delay to `train`, `test`, or `both`   |
+| `--stage2_window_size`       | `1`             | Base temporal context size for supervision        |
+| `--stage2_batch_size`        | `128`           | Batch size for supervision chunks                 |
+| `--stage2_pooling_type`      | `softmax`       | Pooling strategy in the supervision module        |
+| `--stage2_context_direction` | `bidirectional` | Temporal context direction for supervision        |
+| `--e2e_chunk_batches`        | `8`             | Number of mini-batches per optimization chunk     |
+| `--e2e_alpha`                | `1.0`           | Weight for the temporal contrastive encoder loss  |
+| `--e2e_beta`                 | `1.0`           | Weight for the contextual supervision loss        |
 
-# Sythetic-New (type 2 & 3)
-python SLADE_main.py -d synthetic_new
+## Outputs
+
+Experiment logs are saved under:
+
+```text
+log/
 ```
 
-### Argument Options
+The logs include:
 
-```{txt}
-optional arguments:
-  -d DATA, --data DATA         Data sources to use (wikipedia / reddit / Bitcoinalpha / BitcoinOTC)
-  --bs BS                      Batch size
-  --n_degree N_DEGREE          Maximum Number of most recent neighbors
-  --n_head N_HEAD              Number of heads used in the attention layer
-  --n_epoch N_EPOCH            Number of epochs
-  --lr LR                      Learning rate
-  --n_runs                     Number of runs (compute mean and std of results)
-  --drop_out DROP_OUT          Dropout probability
-  --gpu GPU                    Idx for the gpu to use
-  --message_dim MESSAGE_DIM    Dimension of the message
-  --memory_dim MEMORY_DIM      Dimension of the memory
-  --agg_type                   Type of the neighbors aggregation module
-  --negative_memory_type       Type of the negative samples
-  --message_function           Type of the message function
-  --memory_updater             Type of the memory updater
-  --training_ratio             Training ratio of the Dataset
-  --lr_decay                   Learning Rate Decay (Exponential)
-  --weight_decay               Weight Decay of the Optimizer
-  --srf                        Weight of the source node in memory reconstruction loss
-  --drf                        Weight of the destination node in memory reconstruction loss
+- training loss
+- anomaly detection AUC/AP
+- training time
+- inference time
+- mean and standard deviation across repeated runs
 
-  --only_drift_loss_score      Whether to use only Memory Drift Loss and Drift Score
-  --only_recovery_loss_score   Whether to use only Memory Reconstruction Loss and Reconstruction Score
-  --only_drift_score           Whether to use all losses and only Drift Score
-  --only_rec_score             Whether to use all losses and only Reconstruction Score
-  --test_inference_time        Whether to measure detection time (with an evolving CTDG)
+## Submission Archive
+
+For a code-only archive, keep:
+
+```text
+README.md
+requirements.txt
+main.py
+evaluation/
+model/
+modules/
+utils/
+.gitignore
+```
+
+Exclude generated, local, or heavy files:
+
+```text
+.git/
+.vscode/
+data/
+log/
+__pycache__/
+*.pyc
+*.log
+*.pt
+*.pth
+*.ckpt
+.env
+.venv/
+venv/
+```
+
+If the submission requires full reproducibility, include the required `data/ml_<dataset_name>.csv` files or describe the dataset source and preprocessing steps in the accompanying report.
+
+## Dataset Source
+
+Wikipedia and Reddit datasets can be downloaded from the JODIE/SNAP page:
+
+```text
+http://snap.stanford.edu/jodie/
 ```
